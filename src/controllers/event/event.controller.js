@@ -2,6 +2,10 @@ import Event from "../../models/event/event.model.js";
 import { EVENT_STATUS } from "../../models/enum.js";
 import { getIO } from "../../config/socket.js";
 import Notification from "../../models/notification/notification.model.js";
+import {
+  deleteByPublicId,
+  uploadEventBannerImage,
+} from "../../utils/cloudinaryUpload.js";
 
 export const getAllEvents = async (req, res) => {
   try {
@@ -63,7 +67,8 @@ export const createEvent = async (req, res) => {
       totalSeats,
       price,
       status,
-      bannerImage,
+      bannerImage, // preferred: { url, publicId }
+      bannerUrl, // backward compat: string URL
       registrationStartDate,
       registrationEndDate,
       registrationFields, // NEW: Added to capture dynamic form blueprint
@@ -78,6 +83,28 @@ export const createEvent = async (req, res) => {
     }
 
     const availableSeats = totalSeats != null ? Number(totalSeats) : undefined;
+
+    // Upload-first flow:
+    // - Frontend uploads banner via POST /api/events/banner and gets { bannerUrl, publicId }
+    // - Then sends bannerImage: { url, publicId } (or bannerUrl for legacy clients).
+    let resolvedBannerImage = undefined;
+    if (bannerImage && typeof bannerImage === "object" && bannerImage.url) {
+      resolvedBannerImage = {
+        url: bannerImage.url,
+        publicId: bannerImage.publicId,
+      };
+    } else if (typeof bannerUrl === "string" && bannerUrl) {
+      resolvedBannerImage = { url: bannerUrl };
+    } else if (typeof bannerImage === "string" && bannerImage) {
+      // backward compatibility: if client still sends bannerImage as URL, store it.
+      // (If it's base64, we still upload to avoid breaking old clients.)
+      if (bannerImage.startsWith("data:")) {
+        const result = await uploadEventBannerImage(title, bannerImage);
+        if (result?.url) resolvedBannerImage = { url: result.url, publicId: result.publicId };
+      } else {
+        resolvedBannerImage = { url: bannerImage };
+      }
+    }
 
     // 2. Create the event document
     const event = await Event.create({
@@ -94,7 +121,7 @@ export const createEvent = async (req, res) => {
       availableSeats: availableSeats ?? 0,
       price: price != null ? Number(price) : 0,
       status: status && Object.values(EVENT_STATUS).includes(status) ? status : EVENT_STATUS.DRAFT,
-      bannerImage: bannerImage || undefined,
+      bannerImage: resolvedBannerImage,
       registrationFields: registrationFields || [], // NEW: Save the dynamic fields array
     });
 
@@ -160,12 +187,74 @@ export const updateEvent = async (req, res) => {
       "price",
       "status",
       "bannerImage",
+      "bannerUrl",
     ];
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
         if (key === "status" && !Object.values(EVENT_STATUS).includes(req.body[key])) continue;
+        // bannerUrl is legacy; map it into bannerImage.url
+        if (key === "bannerUrl") {
+          event.bannerImage = {
+            url: req.body.bannerUrl,
+            publicId: event.bannerImage?.publicId,
+          };
+          continue;
+        }
+        // if client sends bannerImage as an object { url, publicId }, accept it
+        if (key === "bannerImage" && typeof req.body.bannerImage === "object" && req.body.bannerImage?.url) {
+          event.bannerImage = {
+            url: req.body.bannerImage.url,
+            publicId: req.body.bannerImage.publicId,
+          };
+          continue;
+        }
         event[key] = req.body[key];
       }
+    }
+
+    // If location was updated, validate based on location.type (or infer it)
+    if (req.body.location !== undefined) {
+      const loc = event.location || {};
+      const inferredType =
+        loc.type ||
+        (loc.onCampus && (loc.onCampus.building || loc.onCampus.room || loc.onCampus.landmark)
+          ? "ON_CAMPUS"
+          : loc.venue || loc.address || loc.city
+            ? "OFF_CAMPUS"
+            : "ON_CAMPUS");
+
+      loc.type = inferredType;
+
+      if (inferredType === "ON_CAMPUS") {
+        const on = loc.onCampus || {};
+        if (!on.building && !on.room && !on.landmark && !loc.venue) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "For ON_CAMPUS events, provide location.onCampus (building/room/landmark)",
+          });
+        }
+      } else if (inferredType === "OFF_CAMPUS") {
+        if (!loc.venue && !loc.address && !loc.city) {
+          return res.status(400).json({
+            success: false,
+            message:
+              "For OFF_CAMPUS events, provide at least one of: location.venue, location.address, location.city",
+          });
+        }
+      } else {
+        return res.status(400).json({
+          success: false,
+          message: "location.type must be ON_CAMPUS or OFF_CAMPUS",
+        });
+      }
+
+      event.location = loc;
+    }
+    // Backward compatibility: if bannerImage is base64 string, upload and store { url, publicId }
+    if (typeof req.body.bannerImage === "string" && req.body.bannerImage.startsWith("data:")) {
+      const result = await uploadEventBannerImage(event.title, req.body.bannerImage);
+      if (result?.url) event.bannerImage = { url: result.url, publicId: result.publicId };
     }
     await event.save();
 
@@ -178,6 +267,97 @@ export const updateEvent = async (req, res) => {
   }
 };
 
+/**
+ * POST /api/events/banner
+ * Upload an event banner to Cloudinary under eventManagement/events/[event_name].
+ *
+ * multipart/form-data:
+ * - bannerImage: File (required)
+ * - eventName: string (required)
+ */
+export const uploadEventBanner = async (req, res) => {
+  try {
+    const file = req.file;
+    const { eventName } = req.body;
+
+    if (!file) {
+      return res.status(400).json({ success: false, message: "bannerImage file is required" });
+    }
+    if (!eventName) {
+      return res.status(400).json({ success: false, message: "eventName is required" });
+    }
+
+    const result = await uploadEventBannerImage(eventName, file);
+    if (!result?.url) {
+      return res.status(500).json({ success: false, message: "Failed to upload banner image" });
+    }
+
+    return res.status(201).json({
+      success: true,
+      bannerUrl: result.url,
+      publicId: result.publicId,
+      bannerImage: { url: result.url, publicId: result.publicId },
+    });
+  } catch (error) {
+    console.error("uploadEventBanner error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/**
+ * PATCH /api/events/:id/banner
+ * Upload a new banner for an existing event and update event.bannerImage { url, publicId }.
+ *
+ * multipart/form-data:
+ * - bannerImage: File (required)
+ */
+export const patchEventBanner = async (req, res) => {
+  try {
+    const file = req.file;
+    if (!file) {
+      return res.status(400).json({ success: false, message: "bannerImage file is required" });
+    }
+
+    const event = await Event.findById(req.params.id);
+    if (!event) {
+      return res.status(404).json({ success: false, message: "Event not found" });
+    }
+
+    if (event.organizer.toString() !== req.userId) {
+      return res.status(403).json({ success: false, message: "Not authorized to update this event" });
+    }
+
+    const oldPublicId = event.bannerImage?.publicId;
+
+    const result = await uploadEventBannerImage(event.title, file);
+    if (!result?.url) {
+      return res.status(500).json({ success: false, message: "Failed to upload banner image" });
+    }
+
+    event.bannerImage = { url: result.url, publicId: result.publicId };
+    await event.save();
+
+    // Best-effort cleanup of old banner (don’t fail request if this fails)
+    if (oldPublicId && oldPublicId !== result.publicId) {
+      await deleteByPublicId(oldPublicId);
+    }
+
+    const populated = await Event.findById(event._id)
+      .populate("category", "name description")
+      .populate("organizer", "name email");
+
+    return res.status(200).json({
+      success: true,
+      message: "Banner updated",
+      event: populated,
+      bannerImage: event.bannerImage,
+    });
+  } catch (error) {
+    console.error("patchEventBanner error:", error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 export const deleteEvent = async (req, res) => {
   try {
     const event = await Event.findById(req.params.id);
@@ -187,7 +367,20 @@ export const deleteEvent = async (req, res) => {
     if (event.organizer.toString() !== req.userId) {
       return res.status(403).json({ success: false, message: "Not authorized to delete this event" });
     }
+
+    // Best-effort: delete Cloudinary banner if present
+    const bannerPublicId = event.bannerImage?.publicId;
+
     await Event.findByIdAndDelete(req.params.id);
+
+    if (bannerPublicId) {
+      try {
+        await deleteByPublicId(bannerPublicId);
+      } catch (e) {
+        console.warn("Failed to delete Cloudinary banner:", e?.message || e);
+      }
+    }
+
     res.status(200).json({ success: true, message: "Event deleted successfully" });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
