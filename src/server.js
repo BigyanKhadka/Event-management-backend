@@ -9,6 +9,8 @@ import messageRoutes from "./routes/message.routes.js";
 import categoryRoutes from "./routes/category.routes.js";
 import eventRoutes from "./routes/event.routes.js";
 import registerRoutes from "./routes/register.routes.js";
+import reviewRoutes from "./routes/review.routes.js";
+import institutionRoutes from "./routes/institution.routes.js";
 import notificationRoutes from "./routes/notification.routes.js";
 import { Server } from "socket.io";
 
@@ -17,6 +19,7 @@ import { notFound, errorHandler } from "./middleware/errorMiddleware.js";
 import { connectDB } from "./config/db.js";
 import { createDefaultAdminUser } from "./utils/createDefaultAdminUser.js";
 import { setIO } from "./config/socket.js";
+import initEventStatusCron from "./cron/eventStatusCron.js";
 
 dotenv.config();
 
@@ -46,6 +49,8 @@ app.use("/api/message", messageRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/registrations", registerRoutes);
+app.use("/api/reviews", reviewRoutes);
+app.use("/api/institutions", institutionRoutes);
 app.use("/api/notifications", notificationRoutes);
 
 app.use(notFound);
@@ -56,6 +61,7 @@ const PORT = process.env.PORT || 7100;
 const server = app.listen(PORT, async () => {
   await connectDB();
   await createDefaultAdminUser();
+  initEventStatusCron();
   console.log(`Server Started on PORT ${PORT}`.yellow.bold);
 });
 
