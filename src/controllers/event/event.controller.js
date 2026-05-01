@@ -26,6 +26,7 @@ export const getAllEvents = async (req, res) => {
     const events = await Event.find(filter)
       .populate("category", "name description")
       .populate("organizer", "name email")
+      .populate("institution", "name description")
       .sort({ startDate: 1 })
       .skip(skip)
       .limit(Number(limit))
@@ -46,7 +47,8 @@ export const getEventById = async (req, res) => {
   try {
     const event = await Event.findById(req.params.id)
       .populate("category", "name description")
-      .populate("organizer", "name email");
+      .populate("organizer", "name email")
+      .populate("institution", "name description");
     if (!event) {
       return res.status(404).json({ success: false, message: "Event not found" });
     }
@@ -83,6 +85,7 @@ export const getEventsByInstitution = async (req, res) => {
     const events = await Event.find(filter)
       .populate("category", "name description")
       .populate("organizer", "name email")
+      .populate("institution", "name description")
       .sort({ createdAt: -1 })
       .skip(skip)
       .limit(Number(limit))
@@ -111,6 +114,7 @@ export const createEvent = async (req, res) => {
       totalSeats,
       price,
       status,
+      isFree,
       bannerImage, // preferred: { url, publicId }
       bannerUrl, // backward compat: string URL
       registrationStartDate,
@@ -209,6 +213,7 @@ export const createEvent = async (req, res) => {
       endDate,
       registrationStartDate,
       registrationEndDate,
+      isFree,
       totalSeats: availableSeats,
       availableSeats: availableSeats ?? 0,
       price: price != null ? Number(price) : 0,
