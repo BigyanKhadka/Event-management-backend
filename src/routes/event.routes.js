@@ -35,6 +35,7 @@ router.get("/institution/:institutionId", verifyTokenMiddleware, getEventsByInst
 router.post(
   "/",
   verifyTokenMiddleware,
+  requireVerifiedInstitution,
   createEvent
 );
 router.put(

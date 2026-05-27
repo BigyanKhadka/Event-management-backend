@@ -31,5 +31,5 @@ export const transporter = nodemailer.createTransport({
 
 export const sender = {
   email: "eventsedu73@gmail.com",
-  name: "Bigyan Khadka",
+  name: "Edu Events",
 };
