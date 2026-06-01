@@ -543,7 +543,7 @@ export const REGISTRATION_CONFIRMED_TEMPLATE = `
         <p>Your registration for <strong>{eventTitle}</strong> is now confirmed.</p>
         <div style="text-align: center; margin: 30px 0; background-color: white; padding: 20px; border-radius: 10px; border: 1px dashed #10b981;">
             <p style="margin-bottom: 15px; color: #065f46; font-weight: bold;">Your Event Ticket</p>
-            <img src="cid:qrcode" alt="Event QR Code" style="width: 200px; height: 200px;">
+            <img src="{qrCodeUrl}" alt="Event QR Code" style="width: 200px; height: 200px;">
             <p style="margin-top: 15px; font-size: 12px; color: #6b7280;">Please present this QR code at the event entrance.</p>
         </div>
         <p><strong>Event Details:</strong><br>

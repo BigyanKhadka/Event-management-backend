@@ -6,6 +6,7 @@ import {
   VERIFICATION_EMAIL_TEMPLATE,
 } from "./emailTemplates.js";
 import { transporter, sender } from "./mailtrap.config.js";
+import { uploadQrCodeImage } from "../utils/cloudinaryUpload.js";
 import QRCode from "qrcode";
 
 export const sendRegistrationPendingEmail = async (email, userName, eventTitle, eventPrice) => {
@@ -35,27 +36,34 @@ export const sendRegistrationConfirmedEmail = async (email, userName, eventTitle
       user: userName
     });
     const qrCodeDataUrl = await QRCode.toDataURL(qrData);
-    
+
     // Extract base64 part
     const base64Data = qrCodeDataUrl.split(",")[1];
+
+    // Host the QR on Cloudinary so it renders INLINE in the email body.
+    // Mail clients (Gmail, etc.) don't render cid: or data: image sources,
+    // so we need a real https URL. Fall back to the data URI if upload fails.
+    const uploaded = await uploadQrCodeImage(registrationId, qrCodeDataUrl);
+    const qrCodeUrl = uploaded?.url || qrCodeDataUrl;
 
     const html = REGISTRATION_CONFIRMED_TEMPLATE
       .replace("{userName}", userName)
       .replace("{eventTitle}", eventTitle)
       .replace("{eventDate}", eventDate)
-      .replace("{eventLocation}", eventLocation);
+      .replace("{eventLocation}", eventLocation)
+      .replace("{qrCodeUrl}", qrCodeUrl);
 
     await transporter.sendMail({
       from: `"${sender.name}" <${sender.email}>`,
       to: email,
       subject: `Confirmed: Your registration for ${eventTitle}`,
       html,
+      // Keep the QR as a downloadable attachment too (inline render uses the URL above).
       attachments: [
         {
           filename: "qrcode.png",
           content: base64Data,
           encoding: "base64",
-          cid: "qrcode", // same cid as in html template img tag
         },
       ],
     });

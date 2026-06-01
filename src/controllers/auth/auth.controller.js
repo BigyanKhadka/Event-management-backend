@@ -61,7 +61,12 @@ export const signup = async (req, res) => {
     await user.save();
 
     generateTokenAndSetCookie(res, user._id);
-    await sendVerificationEmail(user.email, verificationToken);
+
+    // Best-effort: a failed verification email must NOT fail account creation.
+    // Fire-and-forget so a slow/blocked SMTP host can't time out the request.
+    sendVerificationEmail(user.email, verificationToken).catch((err) =>
+      console.error("Verification email failed (non-blocking):", err.message)
+    );
 
     res.status(201).json({
       success: true,
@@ -100,7 +105,10 @@ export const verifyEmail = async (req, res) => {
     user.verificationTokenExpiresAt = undefined;
 
     await user.save();
-    await sendWelcomeEmail(user.email, user.name);
+    // Best-effort: a failed welcome email must not fail email verification.
+    sendWelcomeEmail(user.email, user.name).catch((err) =>
+      console.error("Welcome email failed (non-blocking):", err.message)
+    );
 
     res.status(200).json({
       success: true,
@@ -169,7 +177,13 @@ export const login = async (req, res) => {
 };
 
 export const logout = async (req, res) => {
-  res.clearCookie("token");
+  const isProd = process.env.NODE_ENV === "production";
+  // clearCookie only works if the attributes match those used when setting it.
+  res.clearCookie("token", {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? "none" : "lax",
+  });
   res.status(200).json({ success: true, message: "Logged out successfully" });
 };
 
@@ -193,9 +207,12 @@ export const forgotPassword = async (req, res) => {
 
     await user.save();
 
-    await sendPasswordResetEmail(
+    // Best-effort: don't 400 the request (and leave a saved token) if email is slow/fails.
+    sendPasswordResetEmail(
       user.email,
-      `${process.env.CLIENT_URL}/#/auth/reset-password/${resetToken}`
+      `${process.env.CLIENT_URL}/reset-password/${resetToken}`
+    ).catch((err) =>
+      console.error("Password reset email failed (non-blocking):", err.message)
     );
 
     res.status(200).json({
@@ -236,7 +253,11 @@ export const resetPassword = async (req, res) => {
 
     await user.save();
 
-    await sendResetSuccessEmail(user.email);
+    // Best-effort: password is already changed; a failed confirmation email
+    // must not make a successful reset look like a failure.
+    sendResetSuccessEmail(user.email).catch((err) =>
+      console.error("Reset-success email failed (non-blocking):", err.message)
+    );
 
     res.status(200).json({
       success: true,

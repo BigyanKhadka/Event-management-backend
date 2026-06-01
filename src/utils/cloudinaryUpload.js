@@ -43,17 +43,36 @@ export async function uploadEventBannerImage(eventName, source) {
 }
 
 /**
+ * Upload a QR-code image to eventManagement/qrcodes/[registrationId].
+ * Used to embed the QR inline in confirmation emails (cid/data URIs don't
+ * render in most mail clients, so we host the image and link to it).
+ * @param {string} registrationId - Used as a stable public_id (overwritten on re-send)
+ * @param {string|Buffer} source - Base64 data URI or Buffer of the PNG
+ * @returns {Promise<{ url: string, publicId: string }|null>}
+ */
+export async function uploadQrCodeImage(registrationId, source) {
+  if (!isCloudinaryConfigured()) return null;
+  const folder = `${BASE_FOLDER}/qrcodes`;
+  return uploadImage(source, folder, sanitizeFolderName(String(registrationId)));
+}
+
+/**
  * Generic image upload to Cloudinary.
  * @param {string|Buffer|object} source - Base64 data URI, Buffer, or { buffer, mimetype }
  * @param {string} folder - Cloudinary folder path
+ * @param {string} [publicId] - Optional stable public_id (overwrites existing)
  */
-async function uploadImage(source, folder) {
+async function uploadImage(source, folder, publicId) {
   try {
     // Ensure Cloudinary is configured after dotenv has loaded env vars.
     configureCloudinaryFromEnv();
 
     let uploadSource = source;
     let options = { folder, resource_type: "image" };
+    if (publicId) {
+      options.public_id = publicId;
+      options.overwrite = true;
+    }
 
     if (Buffer.isBuffer(source)) {
       uploadSource = `data:image/jpeg;base64,${source.toString("base64")}`;
