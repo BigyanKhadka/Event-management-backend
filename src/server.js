@@ -7,8 +7,8 @@ import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import colors from "colors";
 import userRoutes from "./routes/user.routes.js";
-import chatRoutes from "./routes/chat.routes.js";
-import messageRoutes from "./routes/message.routes.js";
+// import chatRoutes from "./routes/chat.routes.js";
+// import messageRoutes from "./routes/message.routes.js";
 import categoryRoutes from "./routes/category.routes.js";
 import eventRoutes from "./routes/event.routes.js";
 import registerRoutes from "./routes/register.routes.js";
@@ -55,8 +55,8 @@ app.get("/", (req, res) => {
 });
 
 app.use("/api/user", userRoutes);
-app.use("/api/chat", chatRoutes);
-app.use("/api/message", messageRoutes);
+// app.use("/api/chat", chatRoutes);
+// app.use("/api/message", messageRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/registrations", registerRoutes);
