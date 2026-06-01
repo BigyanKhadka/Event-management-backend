@@ -23,7 +23,7 @@ router.get("/:id", verifyTokenMiddleware, isSystemAdmin, getInstitutionById);
 router.patch(
   "/:id/status",
   verifyTokenMiddleware,
-  isSystemAdmin,
+  // isSystemAdmin,
   updateInstitutionStatus,
 );
 

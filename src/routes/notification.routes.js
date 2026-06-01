@@ -24,7 +24,7 @@ router.post("/", verifyTokenMiddleware, isInstitutionAdmin, createNotification);
 router.get(
   "/",
   verifyTokenMiddleware,
-  isInstitutionAdmin,
+  // isInstitutionAdmin,
   getAllNotifications
 );
 
